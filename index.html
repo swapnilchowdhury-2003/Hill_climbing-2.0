@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Canvas Hill Climb</title>
+<style>
+:root{--bg-top:#d9efff;--bg-bottom:#f7fbff;--ground-fill:#4a845a;--ground-line:#2b5a3b;--hud-bg:rgba(12,20,34,0.58);--hud-border:rgba(255,255,255,0.2);--fuel-ok:#35cf78;--fuel-low:#ff4f5e;--coin:#ffd759;--fuel:#44b8ff;--text:#ffffff;--button:rgba(18,32,58,0.72);--button-border:rgba(255,255,255,0.24);--accent:#29c6a0}
+*{box-sizing:border-box;margin:0;padding:0;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+html,body{width:100%;height:100%;overflow:hidden;font-family:"Trebuchet MS","Segoe UI",sans-serif;background:linear-gradient(180deg,var(--bg-top),var(--bg-bottom));color:var(--text);touch-action:none}
+.app{position:relative;width:100%;height:100%}
+canvas{width:100%;height:100%;display:block}
+.hud{position:absolute;top:14px;left:14px;display:flex;gap:10px;align-items:center;background:var(--hud-bg);border:1px solid var(--hud-border);border-radius:12px;padding:10px 12px;backdrop-filter:blur(6px);min-width:290px;z-index:20;pointer-events:none}
+.hud .stat{font-size:15px;font-weight:700;letter-spacing:0.2px;text-shadow:0 1px 0 rgba(0,0,0,0.3);white-space:nowrap}
+.fuel-wrap{width:130px;height:16px;border-radius:999px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.28);overflow:hidden;position:relative}
+.fuel-fill{position:absolute;inset:0 auto 0 0;width:100%;background:linear-gradient(90deg,var(--fuel-ok),#7df0af);transition:width 0.08s linear}
+.fuel-low{animation:flash 0.36s linear infinite;background:linear-gradient(90deg,var(--fuel-low),#ff8d77)}
+@keyframes flash{0%,49%{filter:brightness(1)}50%,100%{filter:brightness(0.5)}}
+.overlay{position:absolute;inset:0;display:grid;place-items:center;background:radial-gradient(circle at center,rgba(6,15,30,0.18),rgba(4,10,20,0.58));z-index:30}
+.panel{width:min(92vw,500px);background:rgba(10,19,37,0.74);border:1px solid rgba(255,255,255,0.2);border-radius:14px;padding:24px 20px;text-align:center;box-shadow:0 18px 34px rgba(2,5,11,0.35)}
+.panel h1{font-size:clamp(28px,5.2vw,44px);margin-bottom:10px;letter-spacing:1px}
+.panel p{opacity:0.93;margin-bottom:16px;line-height:1.4;font-size:15px}
+.btn{border:0;border-radius:11px;background:linear-gradient(180deg,#42d7b1,#24b68f);color:#06231d;padding:12px 18px;font-weight:800;letter-spacing:0.35px;font-size:16px;cursor:pointer;min-width:150px}
+.btn:active{transform:translateY(1px)}
+.touch-controls{position:absolute;left:0;right:0;bottom:14px;padding:0 16px;display:flex;justify-content:space-between;z-index:25;pointer-events:none}
+.touch-btn{pointer-events:auto;width:min(31vw,170px);aspect-ratio:1.2/1;border-radius:14px;border:1px solid var(--button-border);background:var(--button);color:rgba(255,255,255,0.92);font-weight:800;font-size:clamp(16px,3.2vw,22px);letter-spacing:0.4px;display:grid;place-items:center;backdrop-filter:blur(4px);touch-action:none}
+.touch-btn.active{background:rgba(33,186,148,0.75);color:#032018;border-color:rgba(182,255,236,0.7)}
+.key-guide{position:absolute;top:14px;right:14px;z-index:24;pointer-events:none}
+.key-grid{display:grid;grid-template-columns:repeat(2,54px);gap:10px}
+.key-hint{width:54px;height:54px;border-radius:15px;border:1px solid rgba(255,255,255,0.16);background:rgba(10,19,37,0.6);backdrop-filter:blur(6px);display:grid;place-items:center;box-shadow:0 8px 18px rgba(0,0,0,0.22);transform:translateY(0);animation:keyFloat 2.8s ease-in-out infinite}
+.key-hint span{font-size:24px;line-height:1;font-weight:800;color:rgba(255,255,255,0.92);text-shadow:0 1px 0 rgba(0,0,0,0.35)}
+.key-hint small{display:block;margin-top:2px;font-size:9px;letter-spacing:0.9px;font-weight:800;color:rgba(210,225,255,0.72)}
+.key-hint.active{background:linear-gradient(180deg,rgba(66,215,177,0.98),rgba(36,182,143,0.95));border-color:rgba(182,255,236,0.82);box-shadow:0 0 0 1px rgba(255,255,255,0.16),0 0 18px rgba(58,255,210,0.65),0 0 30px rgba(58,255,210,0.35);transform:translateY(-2px) scale(1.05)}
+.key-hint.active span,.key-hint.active small{color:#032018;text-shadow:none}
+.key-hint.dim{opacity:0.8}
+@keyframes keyFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+.hidden{display:none}
+@media(hover:hover) and (pointer:fine){.touch-controls{display:none}}
+</style>
+</head>
+<body>
+<div class="app">
+<canvas id="gameCanvas"></canvas>
+<div class="hud hidden" id="hud">
+  <div class="stat" id="distanceLabel">Distance: 0 m</div>
+  <div class="stat" id="coinLabel">Coins: 0</div>
+  <div class="fuel-wrap"><div class="fuel-fill" id="fuelFill"></div></div>
+</div>
+<div class="overlay" id="startOverlay">
+  <div class="panel">
+    <h1>Hill Climb Run</h1>
+    <p>Drive as far as possible, collect coins, and grab fuel cans before your tank runs dry.<br/>Controls: Right / D = right wheel, Left / A = left wheel, Space = small jump.</p>
+    <button class="btn" id="startBtn">Start Game</button>
+  </div>
+</div>
+<div class="overlay hidden" id="gameOverOverlay">
+  <div class="panel">
+    <h1>Game Over</h1>
+    <p id="finalStats">Distance: 0 m | Coins: 0</p>
+    <button class="btn" id="restartBtn">Restart</button>
+  </div>
+</div>
+<div class="touch-controls" id="touchControls">
+  <button class="touch-btn" id="brakeBtn">LEFT WHEEL</button>
+  <button class="touch-btn" id="gasBtn">RIGHT WHEEL</button>
+</div>
+<div class="key-guide" id="keyGuide">
+  <div class="key-grid" aria-label="Keyboard controls">
+    <div class="key-hint dim" id="leftHint"><div><span>←</span><small>A</small></div></div>
+    <div class="key-hint dim" id="upHint"><div><span>↑</span><small>SPACE</small></div></div>
+    <div class="key-hint dim" id="rightHint"><div><span>→</span><small>D</small></div></div>
+    <div class="key-hint dim" id="downHint"><div><span>↓</span><small>FREE</small></div></div>
+  </div>
+</div>
+</div>
+<script>
+(() => {
+  const canvas = document.getElementById("gameCanvas");
+  const ctx = canvas.getContext("2d");
+  const hud = document.getElementById("hud");
+  const distanceLabel = document.getElementById("distanceLabel");
+  const coinLabel = document.getElementById("coinLabel");
+  const fuelFill = document.getElementById("fuelFill");
+  const startOverlay = document.getElementById("startOverlay");
+  const gameOverOverlay = document.getElementById("gameOverOverlay");
+  const finalStats = document.getElementById("finalStats");
+  const startBtn = document.getElementById("startBtn");
+  const restartBtn = document.getElementById("restartBtn");
+  const gasBtn = document.getElementById("gasBtn");
+  const brakeBtn = document.getElementById("brakeBtn");
+  const leftHint = document.getElementById("leftHint");
+  const upHint = document.getElementById("upHint");
+  const rightHint = document.getElementById("rightHint");
+  const downHint = document.getElementById("downHint");
+
+  const state = {
+    mode: "title",
+    keys: { left: false, right: false, jump: false },
+    time: 0, coins: 0, fuel: 100, distance: 0, cameraX: 0,
+    particles: [],
+    collectibles: { coins: [], fuels: [] },
+    nextCollectibleX: 18,
+    car: null,
+    lastTimestamp: 0,
+    started: false
+  };
+
+  const physics = {
+    gravity: 28, wheelRadius: 0.36, springRest: 0.82, springK: 200, springDamp: 28,
+    wheelMass: 1.2, chassisMass: 5.3, engineTorque: 54, driveGrip: 0.8, rollingDamp: 0.7
+  };
+
+  const view = { width: 800, height: 500, ppm: 42 };
+  const START_X = 12;
+  const START_FLAT_Y = 7.1;
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.floor(window.innerWidth * dpr);
+    canvas.height = Math.floor(window.innerHeight * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    view.width = window.innerWidth;
+    view.height = window.innerHeight;
+    view.ppm = Math.min(view.width / 32, view.height / 18);
+  }
+
+  function terrainHeight(x) {
+    if (x <= 18) return START_FLAT_Y;
+    const a = Math.sin(x * 0.24) * 1.2;
+    const b = Math.sin(x * 0.06 + 1.7) * 2.8;
+    const c = Math.sin(x * 0.011) * 5.8;
+    const d = Math.sin(x * 0.41 + Math.sin(x * 0.09) * 0.8) * 0.42;
+    const base = 6.2 + a + b + c + d;
+    if (x >= 22) return base;
+    const t = (x - 18) / 4;
+    const smooth = t * t * (3 - 2 * t);
+    return START_FLAT_Y * (1 - smooth) + base * smooth;
+  }
+
+  function terrainSlope(x) {
+    const e = 0.02;
+    return (terrainHeight(x + e) - terrainHeight(x - e)) / (2 * e);
+  }
+
+  function makeCar() {
+    const rearX = START_X - 0.65;
+    const frontX = START_X + 0.65;
+    const rearY = terrainHeight(rearX) - physics.wheelRadius;
+    const frontY = terrainHeight(frontX) - physics.wheelRadius;
+    const rearAnchorLocal = { x: -0.66, y: 0.42 };
+    const frontAnchorLocal = { x: 0.72, y: 0.42 };
+    const chassisYRear = rearY - rearAnchorLocal.y - physics.springRest;
+    const chassisYFront = frontY - frontAnchorLocal.y - physics.springRest;
+    return {
+      chassis: {
+        x: START_X, y: (chassisYRear + chassisYFront) * 0.5,
+        vx: 0, vy: 0, angle: 0, av: 0, w: 2.0, h: 0.55,
+        mass: physics.chassisMass, invMass: 1 / physics.chassisMass,
+        inertia: 2.9, invInertia: 1 / 2.9
+      },
+      wheels: [
+        { anchorLocal: rearAnchorLocal, x: rearX, y: rearY, vx: 0, vy: 0, spin: 0, spinV: 0, mass: physics.wheelMass, invMass: 1 / physics.wheelMass, grounded: false },
+        { anchorLocal: frontAnchorLocal, x: frontX, y: frontY, vx: 0, vy: 0, spin: 0, spinV: 0, mass: physics.wheelMass, invMass: 1 / physics.wheelMass, grounded: false }
+      ]
+    };
+  }
+
+  function resetRun() {
+    state.mode = "playing";
+    state.time = 0; state.coins = 0; state.fuel = 100; state.distance = 0;
+    state.keys.left = false;
+    state.keys.right = false;
+    state.keys.jump = false;
+    state.particles.length = 0;
+    state.collectibles.coins.length = 0;
+    state.collectibles.fuels.length = 0;
+    state.nextCollectibleX = 16;
+    state.car = makeCar();
+    state.cameraX = state.car.chassis.x - 5.2;
+    state.lastTimestamp = performance.now(); // Reset timestamp on start to prevent frame-one physics explosion
+    hud.classList.remove("hidden");
+    startOverlay.classList.add("hidden");
+    gameOverOverlay.classList.add("hidden");
+    updateHUD();
+  }
+
+  function endRun(reason) {
+    if (state.mode !== "playing") return;
+    state.mode = "gameover";
+    finalStats.textContent = "Reason: " + reason + " | Distance: " + Math.floor(state.distance) + " m | Coins: " + state.coins;
+    gameOverOverlay.classList.remove("hidden");
+  }
+
+  function updateHUD() {
+    distanceLabel.textContent = "Distance: " + Math.floor(state.distance) + " m";
+    coinLabel.textContent = "Coins: " + state.coins;
+    fuelFill.style.width = Math.max(0, state.fuel).toFixed(1) + "%";
+    if (state.fuel <= 25) fuelFill.classList.add("fuel-low");
+    else fuelFill.classList.remove("fuel-low");
+  }
+
+  function rotate(vx, vy, angle) {
+    const c = Math.cos(angle), s = Math.sin(angle);
+    return { x: vx * c - vy * s, y: vx * s + vy * c };
+  }
+
+  function worldAnchor(chassis, local) {
+    const r = rotate(local.x, local.y, chassis.angle);
+    return { x: chassis.x + r.x, y: chassis.y + r.y };
+  }
+
+  function applyImpulseBody(body, ix, iy, rx, ry) {
+    body.vx += ix * body.invMass;
+    body.vy += iy * body.invMass;
+    body.av += (rx * iy - ry * ix) * body.invInertia;
+  }
+
+  function stepCar(dt) {
+    const car = state.car;
+    const chassis = car.chassis;
+    chassis.vy += physics.gravity * dt;
+    chassis.vx *= 1 - 0.01;
+    chassis.av *= 1 - 0.03;
+    let groundedCount = 0;
+
+    for (let i = 0; i < car.wheels.length; i++) {
+      const wheel = car.wheels[i];
+      wheel.grounded = false;
+      wheel.vy += physics.gravity * dt;
+      const anchor = worldAnchor(chassis, wheel.anchorLocal);
+      const rx = anchor.x - chassis.x;
+      const ry = anchor.y - chassis.y;
+      const anchorVx = chassis.vx + -chassis.av * ry;
+      const anchorVy = chassis.vy + chassis.av * rx;
+      const dx = wheel.x - anchor.x;
+      const dy = wheel.y - anchor.y;
+      const dist = Math.hypot(dx, dy) || 0.0001;
+      const nx = dx / dist, ny = dy / dist;
+      const rvx = wheel.vx - anchorVx;
+      const rvy = wheel.vy - anchorVy;
+      const rel = rvx * nx + rvy * ny;
+      const springForce = -physics.springK * (dist - physics.springRest) - physics.springDamp * rel;
+      const fx = nx * springForce, fy = ny * springForce;
+      wheel.vx += fx * wheel.invMass * dt;
+      wheel.vy += fy * wheel.invMass * dt;
+      applyImpulseBody(chassis, -fx * dt, -fy * dt, rx, ry);
+
+      const gy = terrainHeight(wheel.x) - physics.wheelRadius;
+      if (wheel.y > gy) {
+        wheel.y = gy;
+        if (wheel.vy > 0) wheel.vy = 0;
+        wheel.grounded = true;
+        groundedCount++;
+        const slope = terrainSlope(wheel.x);
+        const mag = Math.hypot(1, slope);
+        const tangent = { x: 1 / mag, y: slope / mag };
+        const normal = { x: -tangent.y, y: tangent.x };
+        if (normal.y < 0) { normal.x *= -1; normal.y *= -1; }
+        const surfaceV = wheel.vx * tangent.x + wheel.vy * tangent.y;
+        const angSurface = wheel.spinV * physics.wheelRadius;
+        const slip = angSurface - surfaceV;
+        const drive = i === 0 ? (state.keys.left ? 1 : 0) : (state.keys.right ? 1 : 0);
+        const gripForce = (slip * -26 + drive * physics.engineTorque) * physics.driveGrip;
+        wheel.vx += tangent.x * gripForce * wheel.invMass * dt;
+        wheel.vy += tangent.y * gripForce * wheel.invMass * dt;
+        wheel.spinV += (-gripForce * physics.wheelRadius / (physics.wheelMass * 0.42)) * dt;
+        wheel.spinV *= 1 - physics.rollingDamp * dt;
+      }
+      wheel.x += wheel.vx * dt;
+      wheel.y += wheel.vy * dt;
+      wheel.spin += wheel.spinV * dt;
+    }
+
+    const drivePower = (state.keys.left ? 1 : 0) + (state.keys.right ? 1 : 0);
+    if (!groundedCount) {
+      const tilt = (state.keys.right ? -1 : 0) + (state.keys.left ? 1 : 0);
+      chassis.av += tilt * 3.7 * dt;
+    } else if (drivePower) {
+      chassis.vx += drivePower * 18 * dt;
+      for (const wheel of car.wheels) {
+        if (wheel.grounded) wheel.vx += drivePower * 10 * dt;
+      }
+    }
+    chassis.x += chassis.vx * dt;
+    chassis.y += chassis.vy * dt;
+    chassis.angle += chassis.av * dt;
+    let avgWheelX = 0;
+    for (const w of car.wheels) avgWheelX += w.x;
+    avgWheelX /= car.wheels.length;
+    const dx = avgWheelX - chassis.x;
+    chassis.vx += dx * 4.2 * dt;
+    const rearSupportY = car.wheels[0].y - car.wheels[0].anchorLocal.y - physics.springRest;
+    const frontSupportY = car.wheels[1].y - car.wheels[1].anchorLocal.y - physics.springRest;
+    const supportY = (rearSupportY + frontSupportY) * 0.5;
+    if (chassis.y > supportY) {
+      chassis.y = supportY;
+      if (chassis.vy > 0) chassis.vy = 0;
+    }
+    if (groundedCount && state.keys.jump) {
+      chassis.vy -= 5.8;
+      chassis.vx += 0.4 * Math.sign(chassis.vx || 1);
+      for (const wheel of car.wheels) {
+        wheel.vy -= 4.2;
+      }
+      state.keys.jump = false;
+    }
+  }
+
+  function spawnCollectibles() {
+    const ahead = state.cameraX + 42;
+    while (state.nextCollectibleX < ahead) {
+      const x = state.nextCollectibleX + Math.random() * 4;
+      const y = terrainHeight(x) - (1.4 + Math.random() * 1.2);
+      if (Math.random() < 0.78) {
+        state.collectibles.coins.push({ x, y, r: 0.28, alive: true, bob: Math.random() * Math.PI * 2 });
+      } else {
+        state.collectibles.fuels.push({ x, y: y - 0.2, r: 0.36, alive: true, bob: Math.random() * Math.PI * 2 });
+      }
+      state.nextCollectibleX += 4.2 + Math.random() * 4.8;
+    }
+    const minX = state.cameraX - 18;
+    state.collectibles.coins = state.collectibles.coins.filter(c => c.x > minX && c.alive);
+    state.collectibles.fuels = state.collectibles.fuels.filter(f => f.x > minX && f.alive);
+  }
+
+  function checkCollectibles(dt) {
+    const car = state.car;
+    const points = [
+      { x: car.chassis.x, y: car.chassis.y },
+      { x: car.wheels[0].x, y: car.wheels[0].y },
+      { x: car.wheels[1].x, y: car.wheels[1].y }
+    ];
+    for (const c of state.collectibles.coins) {
+      c.bob += dt * 2.8;
+      if (!c.alive) continue;
+      for (const p of points) {
+        const dx = p.x - c.x, dy = p.y - c.y;
+        if (dx * dx + dy * dy < (c.r + 0.55) * (c.r + 0.55)) { c.alive = false; state.coins += 1; break; }
+      }
+    }
+    for (const f of state.collectibles.fuels) {
+      f.bob += dt * 2.4;
+      if (!f.alive) continue;
+      for (const p of points) {
+        const dx = p.x - f.x, dy = p.y - f.y;
+        if (dx * dx + dy * dy < (f.r + 0.6) * (f.r + 0.6)) { f.alive = false; state.fuel = 100; break; }
+      }
+    }
+  }
+
+  function spawnDust() {
+    const car = state.car;
+    if (!state.keys.left && !state.keys.right) return;
+    for (const wheel of car.wheels) {
+      if (!wheel.grounded || Math.random() > 0.55) continue;
+      state.particles.push({
+        x: wheel.x - 0.2, y: wheel.y + 0.02,
+        vx: -1.6 - Math.random() * 1.8, vy: -0.7 - Math.random() * 0.8,
+        life: 0.35 + Math.random() * 0.35, size: 0.06 + Math.random() * 0.08
+      });
+    }
+  }
+
+  function updateParticles(dt) {
+    for (let i = state.particles.length - 1; i >= 0; i--) {
+      const p = state.particles[i];
+      p.life -= dt;
+      if (p.life <= 0) { state.particles.splice(i, 1); continue; }
+      p.vy += 5.5 * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
+  }
+
+  function gameChecks() {
+    const c = state.car.chassis;
+    if (state.distance < 1.2 || state.time < 0.85) return;
+    const top = rotate(0, -c.h * 0.9, c.angle);
+    const head = { x: c.x + top.x, y: c.y + top.y };
+    const upsideDown = Math.cos(c.angle) < -0.35;
+    const headHitGround = head.y > terrainHeight(head.x) - 0.03;
+    if (upsideDown && headHitGround) { endRun("Neck Broken - Driver Died"); return; }
+    if (state.fuel <= 0) endRun("Out of fuel");
+  }
+
+  function worldToScreen(wx, wy) {
+    return {
+      x: (wx - state.cameraX) * view.ppm + view.width * 0.35,
+      y: wy * view.ppm + view.height * 0.14
+    };
+  }
+
+  function drawSky() {
+    const grd = ctx.createLinearGradient(0, 0, 0, view.height);
+    grd.addColorStop(0, "#bae7ff");
+    grd.addColorStop(1, "#f5fbff");
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, view.width, view.height);
+    const sunX = view.width * 0.85, sunY = view.height * 0.16;
+    const r = Math.min(view.width, view.height) * 0.08;
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, r, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,240,178,0.55)";
+    ctx.fill();
+  }
+
+  function drawTerrain() {
+    const startX = state.cameraX - 10;
+    const endX = state.cameraX + (view.width / view.ppm) + 24;
+    const step = 0.26;
+    ctx.beginPath();
+    let p = worldToScreen(startX, terrainHeight(startX));
+    ctx.moveTo(p.x, p.y);
+    for (let x = startX + step; x <= endX; x += step) {
+      p = worldToScreen(x, terrainHeight(x));
+      ctx.lineTo(p.x, p.y);
+    }
+    ctx.lineTo(view.width + 40, view.height + 40);
+    ctx.lineTo(-40, view.height + 40);
+    ctx.closePath();
+    ctx.fillStyle = "#4c8b5f";
+    ctx.fill();
+    ctx.beginPath();
+    p = worldToScreen(startX, terrainHeight(startX));
+    ctx.moveTo(p.x, p.y);
+    for (let x = startX + step; x <= endX; x += step) {
+      p = worldToScreen(x, terrainHeight(x));
+      ctx.lineTo(p.x, p.y);
+    }
+    ctx.strokeStyle = "#254a33";
+    ctx.lineWidth = Math.max(2, view.ppm * 0.08);
+    ctx.stroke();
+  }
+
+  function drawCollectibles() {
+    for (const c of state.collectibles.coins) {
+      if (!c.alive) continue;
+      const bobY = Math.sin(c.bob) * 0.12;
+      const squash = 0.78 + 0.22 * Math.abs(Math.cos(c.bob * 1.6));
+      const s = worldToScreen(c.x, c.y + bobY);
+      const r = c.r * view.ppm;
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.scale(squash, 1);
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffd04e";
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#a56b00";
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.42, 0, Math.PI * 2);
+      ctx.strokeStyle = "#fff1bf";
+      ctx.stroke();
+      ctx.restore();
+    }
+    for (const f of state.collectibles.fuels) {
+      if (!f.alive) continue;
+      const bobY = Math.sin(f.bob) * 0.12;
+      const pulse = 0.92 + 0.1 * Math.sin(f.bob * 2.2);
+      const s = worldToScreen(f.x, f.y + bobY);
+      const w = f.r * view.ppm * 1.2;
+      const h = f.r * view.ppm * 1.5;
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.rotate(Math.sin(f.bob) * 0.08);
+      ctx.scale(pulse, pulse);
+      ctx.fillStyle = "#3db8ff";
+      ctx.fillRect(-w * 0.5, -h * 0.5, w, h);
+      ctx.strokeStyle = "#0c5f90";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-w * 0.5, -h * 0.5, w, h);
+      ctx.fillStyle = "#d8f2ff";
+      ctx.fillRect(-w * 0.15, -h * 0.18, w * 0.3, h * 0.56);
+      ctx.restore();
+    }
+  }
+
+  function drawParticles() {
+    for (const p of state.particles) {
+      const s = worldToScreen(p.x, p.y);
+      const alpha = Math.max(0, Math.min(1, p.life * 2));
+      ctx.fillStyle = "rgba(112,88,74," + alpha.toFixed(3) + ")";
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, p.size * view.ppm, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawFunnyDriver(bw, bh) {
+    ctx.save();
+    ctx.translate(0, -bh * 1.15);
+    ctx.rotate(-0.08);
+    ctx.lineCap = "round";
+
+    ctx.fillStyle = "#b76f48";
+    ctx.fillRect(-bw * 0.085, bh * 0.12, bw * 0.17, bh * 0.68);
+
+    ctx.fillStyle = "#2a211f";
+    ctx.fillRect(-bw * 0.36, bh * 0.34, bw * 0.72, bh * 0.18);
+
+    ctx.beginPath();
+    ctx.ellipse(0, -bh * 0.02, bw * 0.28, bh * 0.34, 0.03, 0, Math.PI * 2);
+    ctx.fillStyle = "#d89669";
+    ctx.fill();
+
+    ctx.fillStyle = "#2b1b14";
+    ctx.beginPath();
+    ctx.arc(-bw * 0.17, -bh * 0.28, bw * 0.13, 0, Math.PI * 2);
+    ctx.arc(0, -bh * 0.42, bw * 0.17, 0, Math.PI * 2);
+    ctx.arc(bw * 0.17, -bh * 0.28, bw * 0.13, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#16233f";
+    ctx.fillRect(-bw * 0.24, -bh * 0.12, bw * 0.18, bh * 0.1);
+    ctx.fillRect(bw * 0.06, -bh * 0.12, bw * 0.18, bh * 0.1);
+    ctx.fillRect(-bw * 0.06, -bh * 0.08, bw * 0.12, bh * 0.03);
+
+    ctx.fillStyle = "#9ad6ff";
+    ctx.fillRect(-bw * 0.22, -bh * 0.1, bw * 0.14, bh * 0.06);
+    ctx.fillRect(bw * 0.08, -bh * 0.1, bw * 0.14, bh * 0.06);
+
+    ctx.strokeStyle = "#6b3f2a";
+    ctx.lineWidth = Math.max(2, bw * 0.03);
+    ctx.beginPath();
+    ctx.arc(-bw * 0.06, bh * 0.02, bw * 0.035, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(bw * 0.06, bh * 0.02, bw * 0.035, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = "#2a1a16";
+    ctx.lineWidth = Math.max(2, bw * 0.02);
+    ctx.beginPath();
+    ctx.moveTo(-bw * 0.06, bh * 0.18);
+    ctx.quadraticCurveTo(0, bh * 0.22, bw * 0.06, bh * 0.18);
+    ctx.stroke();
+
+    ctx.strokeStyle = "#2a1a16";
+    ctx.lineWidth = Math.max(2, bw * 0.025);
+    ctx.beginPath();
+    ctx.moveTo(-bw * 0.12, bh * 0.02);
+    ctx.lineTo(-bw * 0.03, bh * 0.03);
+    ctx.moveTo(bw * 0.03, bh * 0.03);
+    ctx.lineTo(bw * 0.12, bh * 0.02);
+    ctx.stroke();
+
+    ctx.fillStyle = "#f4c59b";
+    ctx.fillRect(-bw * 0.16, bh * 0.7, bw * 0.32, bh * 0.08);
+
+    ctx.restore();
+  }
+
+  function drawCar() {
+    const car = state.car;
+    const c = car.chassis;
+    const chassisScreen = worldToScreen(c.x, c.y);
+    for (const w of car.wheels) {
+      const s = worldToScreen(w.x, w.y);
+      const r = physics.wheelRadius * view.ppm;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = "#22283d";
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#96b3d4";
+      ctx.stroke();
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.rotate(w.spin);
+      ctx.strokeStyle = "#d5e7fb";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.7, 0);
+      ctx.lineTo(r * 0.7, 0);
+      ctx.moveTo(0, -r * 0.7);
+      ctx.lineTo(0, r * 0.7);
+      ctx.stroke();
+      ctx.restore();
+      const anchor = worldAnchor(c, w.anchorLocal);
+      const a = worldToScreen(anchor.x, anchor.y);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(s.x, s.y);
+      ctx.strokeStyle = "#89adc6";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+    ctx.save();
+    ctx.translate(chassisScreen.x, chassisScreen.y);
+    ctx.rotate(c.angle);
+    const bw = c.w * view.ppm, bh = c.h * view.ppm;
+    ctx.fillStyle = "#e74d5f";
+    ctx.fillRect(-bw * 0.5, -bh * 0.5, bw, bh);
+    ctx.fillStyle = "#2e3959";
+    ctx.fillRect(-bw * 0.18, -bh * 0.92, bw * 0.56, bh * 0.52);
+    ctx.fillStyle = "#a7cff0";
+    ctx.fillRect(-bw * 0.08, -bh * 0.83, bw * 0.36, bh * 0.32);
+    ctx.fillStyle = "#ffe6b2";
+    ctx.beginPath();
+    ctx.arc(bw * 0.06, -bh * 0.75, bh * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+
+    drawFunnyDriver(bw, bh);
+    ctx.restore();
+  }
+
+  function update(dt) {
+    if (state.mode !== "playing") return;
+    state.time += dt;
+    state.fuel = Math.min(100, state.fuel + dt * 16);
+    const driveCost = (state.keys.left ? 1 : 0) + (state.keys.right ? 1 : 0);
+    state.fuel -= dt * (driveCost * 6 + (state.keys.jump ? 10 : 0));
+    if (state.fuel < 0) state.fuel = 0;
+    const stepCount = Math.max(1, Math.min(4, Math.ceil(dt / 0.008)));
+    const subDt = dt / stepCount;
+    for (let i = 0; i < stepCount; i++) stepCar(subDt);
+    spawnCollectibles();
+    checkCollectibles(dt);
+    spawnDust();
+    updateParticles(dt);
+    gameChecks();
+    state.cameraX += (state.car.chassis.x - state.cameraX - 5.2) * Math.min(1, dt * 3.2);
+    state.distance = Math.max(0, state.car.chassis.x - START_X);
+    updateHUD();
+  }
+
+  function render() {
+    drawSky();
+    drawTerrain();
+    if (state.car && (state.mode === "playing" || state.mode === "gameover")) {
+      drawCollectibles();
+      drawParticles();
+      drawCar();
+    }
+  }
+
+  function loop(ts) {
+    const rawDt = (ts - state.lastTimestamp) / 1000;
+    state.lastTimestamp = ts;
+    const dt = Math.min(0.032, Math.max(0.001, rawDt));
+    update(dt);
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  // Unified control system: keyboard, touch, and focus-loss cleanup all drive the same state.
+  const controlMap = {
+    arrowright: "right",
+    d: "right",
+    arrowleft: "left",
+    a: "left"
+  };
+
+  function setControl(name, down) {
+    state.keys[name] = down;
+    const button = name === "right" ? gasBtn : brakeBtn;
+    button.classList.toggle("active", down);
+    const hint = name === "right" ? rightHint : leftHint;
+    hint.classList.toggle("active", down);
+    hint.classList.toggle("dim", !down);
+  }
+
+  function setJumpControl(down) {
+    state.keys.jump = down;
+    upHint.classList.toggle("active", down);
+    upHint.classList.toggle("dim", !down);
+  }
+
+  function clearControls() {
+    setControl("left", false);
+    setControl("right", false);
+    setJumpControl(false);
+  }
+
+  function handleKeyboardControl(e, down) {
+    if (e.key === " ") {
+      setJumpControl(down);
+      e.preventDefault();
+      return;
+    }
+    const name = controlMap[e.key.toLowerCase()];
+    if (!name) return;
+    setControl(name, down);
+    e.preventDefault();
+  }
+
+  function bindHoldButton(btn, name) {
+    const onDown = ev => {
+      ev.preventDefault();
+      setControl(name, true);
+    };
+    const onUp = ev => {
+      ev.preventDefault();
+      setControl(name, false);
+    };
+    btn.addEventListener("pointerdown", onDown);
+    btn.addEventListener("pointerup", onUp);
+    btn.addEventListener("pointerleave", onUp);
+    btn.addEventListener("pointercancel", onUp);
+  }
+
+  window.addEventListener("keydown", e => handleKeyboardControl(e, true), { passive: false });
+  window.addEventListener("keyup", e => handleKeyboardControl(e, false), { passive: false });
+  window.addEventListener("blur", clearControls);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) clearControls();
+  });
+  downHint.classList.add("dim");
+  startBtn.addEventListener("click", resetRun);
+  restartBtn.addEventListener("click", resetRun);
+  bindHoldButton(gasBtn, "right");
+  bindHoldButton(brakeBtn, "left");
+  window.addEventListener("resize", resize);
+
+  resize();
+  // Set initial performance timestamp before initiating loop
+  state.lastTimestamp = performance.now();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
